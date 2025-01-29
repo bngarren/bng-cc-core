@@ -1,23 +1,8 @@
-local lib = {}
-
--- Function to dynamically load a module
-function lib.require(moduleName)
-  if not lib[moduleName] then
-    local moduleFile = "/lib/mylib/" .. moduleName .. ".lua"
-    if fs.exists(moduleFile) then
-      lib[moduleName] = dofile(moduleFile)
-    else
-      error("Module not found: " .. moduleName)
+return {
+    -- initialize booted environment
+    init_env = function()
+        local _require, _env = require("cc.require"), setmetatable({}, { __index = _ENV })
+        require, package = _require.make(_env, "/")
+        term.clear(); term.setCursorPos(1, 1)
     end
-  end
-  return lib[moduleName]
-end
-
--- Metatable to enable lazy loading
-setmetatable(lib, {
-  __index = function(self, key)
-    return lib.require(key)
-  end
-})
-
-return lib
+}
