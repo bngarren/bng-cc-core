@@ -5,7 +5,7 @@ return {
         require, package = _require.make(_env, "/")
 
         -- Add custom module paths
-        local module_folder = "/bng/common/?.lua;/bng/programs/?.lua"
+        local module_folder = "/bng/common/?.lua;/bng/common/?/?.lua;/bng/common/?/init.lua;/bng/programs/?.lua"
         package.path = module_folder .. ";" .. package.path
 
         term.clear(); term.setCursorPos(1, 1)
@@ -13,3 +13,4 @@ return {
         print("Updated package.path: \n" .. package.path)
     end
 }
+
