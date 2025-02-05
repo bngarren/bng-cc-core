@@ -1,0 +1,47 @@
+name: Create Minified Release Asset
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Lua
+      uses: leafo/gh-actions-lua@v10
+      with:
+        luaVersion: "5.1"
+
+    - name: Set up LuaRocks
+      uses: leafo/gh-actions-luarocks@v4
+
+    - name: Install luamin
+      run: |
+        luarocks install luamin
+
+    - name: Combine and Minify Lua Files
+      run: |
+        # First combine all source files
+        echo "-- bng-cc-core minified $(date '+%Y-%m-%d %H:%M:%S')" > combined.lua
+        for file in src/*.lua; do
+          echo "-- File: $file" >> combined.lua
+          cat "$file" >> combined.lua
+          echo -e "\n" >> combined.lua
+        done
+        
+        # Then minify the combined file
+        luamin -f combined.lua > bng-cc-core.min.lua
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./bng-cc-core.min.lua
+        asset_name: bng-cc-core.min.lua
+        asset_content_type: text/plain
