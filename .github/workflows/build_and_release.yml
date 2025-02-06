@@ -1,0 +1,63 @@
+name: Build and Release
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      upload_artifacts:
+        description: 'Upload build artifacts'
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Need full history for tags
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Set up Lua
+      uses: leafo/gh-actions-lua@v10
+      with:
+        luaVersion: "5.1"
+
+    - name: Set up LuaRocks
+      uses: leafo/gh-actions-luarocks@v4
+
+    - name: Install build dependencies
+      run: |
+        npm install -g luamin
+        luarocks install luacc
+
+    - name: Build library
+      run: |
+        chmod +x ./build.sh
+        ./build.sh
+
+    - name: Upload build artifacts (manual run)
+      if: github.event_name == 'workflow_dispatch' && inputs.upload_artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: bng-cc-core-build
+        path: |
+          dist/bng-cc-core.lua
+          dist/release/bng-cc-core.min.lua
+        if-no-files-found: error
+
+    - name: Upload Release Assets
+      if: github.event_name == 'release'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release upload ${{ github.event.release.tag_name }} \
+          dist/bng-cc-core.lua \
+          dist/release/bng-cc-core.min.lua
