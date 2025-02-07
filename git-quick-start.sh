@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 
 # Quick starts the dev environment by fetching from origin and pulling/rebasing the local dev branch onto any remote dev changes
 
