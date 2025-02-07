@@ -1,19 +1,30 @@
 #!/bin/bash
 
-# Check for uncommitted changes (both modified and untracked files)
-is_dirty="false"
-if ! git diff --quiet HEAD -- || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-    is_dirty="true"
+# Ensure the latest tags are fetched
+git fetch --tags --force
+
+# Check if running in GitHub Actions release workflow
+GITHUB_RELEASE=false
+if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+    GITHUB_RELEASE=true
 fi
 
-# Prompt the user if dirty
-if [ "$is_dirty" = "true" ]; then
-    read -r -p "There are uncommitted changes. Are you sure you want to build? (Y/n) " user_input
-    user_input=$(echo "$user_input" | tr '[:upper:]' '[:lower:]') # Convert to lowercase (POSIX-compliant)
+# Check for uncommitted changes (both modified and untracked files) – only for local builds
+is_dirty="false"
+if [[ "$GITHUB_RELEASE" == "false" ]]; then
+    if ! git diff --quiet HEAD -- || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+        is_dirty="true"
+    fi
 
-    if [ "$user_input" = "n" ] || [ "$user_input" = "no" ]; then
-        echo "Build aborted."
-        exit 1
+    # Prompt the user if dirty
+    if [ "$is_dirty" = "true" ]; then
+        read -r -p "There are uncommitted changes. Are you sure you want to build? (Y/n) " user_input
+        user_input=$(echo "$user_input" | tr '[:upper:]' '[:lower:]') # Convert to lowercase (POSIX-compliant)
+
+        if [ "$user_input" = "n" ] || [ "$user_input" = "no" ]; then
+            echo "Build aborted."
+            exit 1
+        fi
     fi
 fi
 
@@ -21,10 +32,22 @@ fi
 get_version_info() {
     # Get latest tag (fallback to "v0.0.0" if no tags exist)
     local latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-    latest_tag=$(echo $latest_tag | sed 's/^v//')
+    latest_tag=$(echo $latest_tag | sed 's/^v//') # Strip 'v' prefix for consistency
 
-    # Get current branch
-    local current_branch=$(git rev-parse --abbrev-ref HEAD)
+    # Detect if running in GitHub Actions release
+    if [[ "$GITHUB_RELEASE" == "true" ]]; then
+        echo "$latest_tag"
+        return
+    fi
+
+    # Get current branch, handling detached HEAD (GitHub Actions checkouts)
+    local current_branch
+    if [[ -n "$GITHUB_REF_NAME" ]]; then
+        current_branch="$GITHUB_REF_NAME"
+    else
+        current_branch=$(git rev-parse --abbrev-ref HEAD)
+        [[ "$current_branch" == "HEAD" ]] && current_branch="detached"
+    fi
 
     # Get short commit hash
     local commit_hash=$(git rev-parse --short HEAD)
