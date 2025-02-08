@@ -61,8 +61,8 @@ get_version_info() {
     if git describe --exact-match --tags >/dev/null 2>&1 && [ "$is_dirty" = "false" ]; then
         version="$latest_tag" # Use the exact tag for clean releases
     else
-        # Format: lastTag-wip-branch-commitHash (or dirty)
-        version="${latest_tag}-wip-${current_branch}-${commit_hash}"
+        # Format: lastTag+build.branch.commitHash (or dirty)
+        version="${latest_tag}+${current_branch}.${commit_hash}"
     fi
 
     echo "$version"
