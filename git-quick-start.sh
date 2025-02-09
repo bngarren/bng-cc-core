@@ -1,6 +1,7 @@
 #!/bin/zsh
 
 # Quick starts the dev environment by fetching from origin and pulling/rebasing the local dev branch onto any remote dev changes
+#  - Will also merge 'master' into 'dev' so that dev is up-to-date with latest stable releases, hotfixes, etc.
 
 # Define ANSI colors for macOS & Zsh
 YELLOW='\033[1;33m'
