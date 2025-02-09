@@ -11,8 +11,9 @@ local L = {
     _BUILD_DATE = version.BUILD_DATE,
 
     -- Expose modules directly
-    util = require('util'),
-    ppm = require('ppm'),
+    initenv = require("initenv"),
+    util = require("util"),
+    ppm = require("ppm"),
 }
 
 setmetatable(L, {
