@@ -2,16 +2,17 @@ local Logger = {}
 Logger.__index = Logger
 
 local DEFAULT_CONFIG = {
+    source = nil, -- This will be populated dynamically
     level = "info",
     abbreviate_level = true,
     colors = true,
     timestamp = "%R:%S",
     file = {
-        dir_path = "/bng/logs",
+        base_path = "/bng/logs",
         current_path = nil,
-        max_logs = 5
+        max_logs = 3
     },
-    outputs = { term = true, monitors = { "top" } }
+    outputs = { term = true }
 }
 
 -- Define log levels with colors
@@ -86,31 +87,43 @@ local function deep_copy(original)
     return copy
 end
 
-local function get_new_log_filename()
-    local timestamp = os.date("%Y%m%d_%H%M%S")
-    local source = debug.getinfo(3, "S").short_src or "unknown"
-
-    -- Remove directory path and extension from source file
-    source = source:match("([^/\\]+)%.") or source -- Extract only the filename without extension
-
-    return string.format("%s_%s.log", timestamp, source)
+local function get_new_log_filename(source)
+    -- Use epoch time as prefix - guaranteed to be sortable and unique
+    local timestamp = os.epoch("utc")
+    return string.format("%d_%s.log", timestamp, source or "unknown")
 end
 
+-- Helper function to get the caller's source file
+local function get_caller_source()
+    -- Walk up the stack to find the first non-Logger caller
+    local level = 3 -- Start at 3 to skip immediate caller and logger methods
+    local info = debug.getinfo(level, "S")
+
+    if info and info.source then
+        -- Clean up the source path - remove @ prefix if present
+        local source = info.source:match("^@?(.+)$")
+        if source then
+            -- Get the full filename including dots but excluding .lua extension
+            local filename = source:match("[^/\\]+$"):gsub("%.lua$", "")
+            return filename
+        end
+    end
+    return "unknown"
+end
 
 local function clean_old_logs(log_dir, max_logs)
-    if not fs.exists(log_dir) then fs.makeDir(log_dir) end
-
     local files = {}
     for _, file in ipairs(fs.list(log_dir)) do
-        if file:match("^log_%d+_%d+%.txt$") then
+        if file:match("%.log$") then
             table.insert(files, file)
         end
     end
 
-    table.sort(files, function(a, b) return a < b end) -- Oldest first
+    -- Simple string sort will work since timestamps are at start of filename
+    table.sort(files)
 
     -- Delete oldest logs if exceeding max_logs
-    while #files > max_logs do
+    while #files >= max_logs do
         fs.delete(fs.combine(log_dir, table.remove(files, 1)))
     end
 end
@@ -124,8 +137,9 @@ local function write_log_banner(logger)
         string.format("Date: %s", os.date("%c")),
         string.format("Computer ID: %d", os.getComputerID()),
         string.format("Computer Label: %s", os.getComputerLabel() or "N/A"),
-        string.format("Logger Source: %s", debug.getinfo(3, "S").short_src or "Unknown"),
+        string.format("Logger Source: %s (%s)", logger.config.source, shell.getRunningProgram()),
         string.format("OS Version: %s", os.version()),
+        string.format("Log level: %s", string.upper(logger.config.level)),
         "==========================================================="
     }
 
@@ -153,7 +167,7 @@ end
 local function write_to_monitor(mon, output, color)
     local orig_color = mon.getTextColor()
     local prev_term = term.current()
-    
+
     term.redirect(mon)
     if color then mon.setTextColor(color) end
     print(output)
@@ -184,11 +198,25 @@ end
 function Logger.new(config)
     local self = setmetatable({}, Logger)
 
-    -- Merge user config with defaults
-    self.config = {}
-    for k, v in pairs(DEFAULT_CONFIG) do
-        self.config[k] = (config and config[k] ~= nil) and config[k] or v
+    -- Start with a deep copy of defaults
+    self.config = deep_copy(DEFAULT_CONFIG)
+
+    -- If config is provided, merge it with defaults
+    if config and type(config) == "table" then
+        for k, v in pairs(config) do
+            if type(v) == "table" and type(self.config[k]) == "table" then
+                -- For nested tables, merge recursively
+                for subk, subv in pairs(v) do
+                    self.config[k][subk] = subv
+                end
+            else
+                -- For non-table values, simply overwrite
+                self.config[k] = v
+            end
+        end
     end
+
+    -- print(textutils.serialize(self.config, {compact = true}))
 
     if not LEVELS[self.config.level] then
         error("Invalid logging level: " .. tostring(self.config.level))
@@ -197,16 +225,25 @@ function Logger.new(config)
     -- Use a precomputed level index for fast lookup
     self.current_level_index = LEVELS[self.config.level].level
 
-    -- File logging init
-    -- Ensure log directory exists
-    if not fs.exists(self.config.file.dir_path) then
-        fs.makeDir(self.config.file.dir_path)
+    -- [[[[[[ File logging init ]]]]]]
+
+    -- Set source if not explicitly provided
+    if not self.config.source then
+        self.config.source = get_caller_source()
     end
 
-    clean_old_logs(self.config.file.dir_path, self.config.file.max_logs) -- Keep max 5 logs
+    -- Ensure log directory exists
+
+    local log_dir = fs.combine(self.config.file.base_path, self.config.source)
+    if not fs.exists(log_dir) then
+        fs.makeDir(log_dir)
+    end
+
+    clean_old_logs(log_dir, self.config.file.max_logs) -- Keep max # logs
 
     -- Set up new log file
-    self.config.file.current_path = fs.combine(self.config.file.dir_path, get_new_log_filename())
+    local new_log_filename = get_new_log_filename(self.config.source)
+    self.config.file.current_path = fs.combine(log_dir, new_log_filename)
 
     -- Initialize active monitors table
     self.active_monitors = {}
@@ -230,10 +267,10 @@ end
 function Logger:sync_monitors()
     -- Clear current active monitors
     self.active_monitors = {}
-    
+
     -- Skip if no monitor output configured
     if not self.config.outputs.monitors then return end
-    
+
     -- Validate each configured monitor
     for _, monitor_name in ipairs(self.config.outputs.monitors) do
         local success, result = validate_monitor(monitor_name)
@@ -246,7 +283,7 @@ function Logger:sync_monitors()
             end
         end
     end
-    
+
     -- Set initialization flag after first sync
     self.initialized = true
 end
@@ -273,7 +310,7 @@ function Logger:log(level, ...)
     if self.config.outputs.monitors then
         for _, mon in pairs(self.active_monitors) do
             write_to_monitor(
-                mon,  -- Pass the actual monitor peripheral
+                mon, -- Pass the actual monitor peripheral
                 output,
                 self.config.colors and LEVELS[level].color
             )
@@ -302,5 +339,74 @@ for level, _ in pairs(LEVELS) do
     end
 end
 
+-- ***** Logger Builder
 
-return Logger
+local LoggerBuilder = {}
+LoggerBuilder.__index = LoggerBuilder
+
+function LoggerBuilder.new()
+    local self = setmetatable({}, LoggerBuilder)
+    -- Initialize with empty config
+    self.config = deep_copy(DEFAULT_CONFIG)
+
+    return self
+end
+
+function LoggerBuilder:with_level(level)
+    self.config.level = level
+    return self
+end
+
+function LoggerBuilder:with_source(source)
+    self.config.source = source
+    return self
+end
+
+function LoggerBuilder:with_colors(enabled)
+    self.config.colors = enabled
+    return self
+end
+
+function LoggerBuilder:with_timestamp_format(format)
+    self.config.timestamp = format
+    return self
+end
+
+function LoggerBuilder:with_abbreviated_level(enabled)
+    self.config.abbreviate_level = enabled
+    return self
+end
+
+function LoggerBuilder:with_max_log_files(max)
+    self.config.file.max_logs = max
+    return self
+end
+
+function LoggerBuilder:with_terminal_output(enabled)
+    self.config.outputs.term = enabled
+    return self
+end
+
+function LoggerBuilder:with_monitor_output(monitor_names)
+    if type(monitor_names) == "string" then
+        monitor_names = { monitor_names }
+    end
+    self.config.outputs.monitors = monitor_names
+    return self
+end
+
+function LoggerBuilder:build()
+    -- If source wasn't explicitly set via with_source(), get it here
+    if not self.config.source then
+        self.config.source = get_caller_source()
+    end
+
+    local instance = Logger.new(self.config)
+    setmetatable(instance, Logger)
+    return instance
+end
+
+return LoggerBuilder
+
+
+-- return Logger
