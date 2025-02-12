@@ -10,12 +10,17 @@ local L = {
     _BRANCH = version.BRANCH,
     _BUILD_DATE = version.BUILD_DATE,
 
-    -- Expose modules directly
-    initenv = require("initenv"),
-    log = require("log"),
-    util = require("util"),
-    ppm = require("ppm"),
+    -- -- Expose modules directly
+    -- initenv = require("initenv"),
+    -- log = require("log"),
+    -- util = require("util"),
+    -- ppm = require("ppm"),
 }
+
+L.initenv = require("initenv")
+L.log = require("log")
+L.util = require("util")
+L.ppm = require("ppm")({log = L.log})
 
 setmetatable(L, {
     __index = function(t, k)
