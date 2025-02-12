@@ -1,6 +1,8 @@
 local Logger = {}
 Logger.__index = Logger
 
+local _instance = nil
+
 local DEFAULT_CONFIG = {
     --- Name of the source file/program this log is logging
     source = nil,
@@ -12,7 +14,7 @@ local DEFAULT_CONFIG = {
     colors = true,
     --- Date format string. See https://cplusplus.com/reference/ctime/strftime/
     timestamp = "%R:%S",
-    --- Options for file logging. Use nil or false or turn off file logging
+    --- Options for file logging.
     file = {
         --- Base path for all log files. Typically the actual log path will be the programName/filename.log appended on to the base_path.
         base_path = "/bng/logs",
@@ -24,7 +26,7 @@ local DEFAULT_CONFIG = {
     --- Determines which outputs should be attempted during logging. Defaults to true for 'term' (terminal output). 
     -- <br> Example:
     -- `outputs.monitors = {"top"}` -- will attempt to log to a monitor peripheral on the 'top' side
-    outputs = { term = true }
+    outputs = { term = true, file = true }
 }
 
 -- Define log levels with colors
@@ -208,8 +210,27 @@ end
 
 
 function Logger.new(config)
-    local self = setmetatable({}, Logger)
 
+    if _instance then
+        if config then
+            -- Update existing instance's config
+            for k, v in pairs(config) do
+                if type(v) == "table" and type(_instance.config[k]) == "table" then
+                    for subk, subv in pairs(v) do
+                        _instance.config[k][subk] = subv
+                    end
+                else
+                    _instance.config[k] = v
+                end
+            end
+            -- Reinitialize necessary components with new config
+            _instance:sync_monitors()
+        end
+        return _instance
+    end
+
+
+    local self = setmetatable({}, Logger)
     -- Start with a deep copy of defaults
     self.config = deep_copy(DEFAULT_CONFIG)
 
@@ -266,7 +287,23 @@ function Logger.new(config)
     -- Write log banner
     write_log_banner(self)
 
+    _instance = self
+
     return self
+end
+
+-- Get the current logger instance or create with defaults
+function Logger.get_instance()
+    if not _instance then
+        -- Print warning since we're creating with defaults
+        print("Warning: Logger accessed before initialization. Using default configuration.")
+        return Logger.new({
+            outputs = {
+                file = false
+            }
+        })
+    end
+    return _instance
 end
 
 function Logger:set_level(level)
@@ -341,7 +378,7 @@ function Logger:log(level, ...)
     end
 
     -- Handle file output
-    if self.config.file then
+    if self.config.outputs.file then
         write_to_file(self, output)
     end
 end
@@ -420,6 +457,8 @@ function LoggerBuilder:build()
     return instance
 end
 
-
-return LoggerBuilder
+return {
+    Builder = LoggerBuilder,
+    instance = Logger.get_instance,
+}
 

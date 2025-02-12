@@ -1,6 +1,8 @@
 -- ppm.lua
 -- Simple Peripheral Manager
 
+local log = require("bng-cc-core").log.instance()
+
 local ppm = {}
 local peripherals = {}
 
@@ -18,7 +20,8 @@ function ppm.mount_all()
     peripherals = {}  -- Clear existing mounts
     for _, side in ipairs(peripheral.getNames()) do
         peripherals[side] = safe_wrap(side)
-        print("PPM: Mounted " ..peripheral.getType(side).." on " .. side)
+        -- print("PPM: Mounted " ..peripheral.getType(side).." on " .. side)
+        log:info("PPM: Mounted %s on %s", peripheral.getType(side), side)
     end
 end
 

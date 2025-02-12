@@ -12,7 +12,7 @@ local L = {
 
     -- Expose modules directly
     initenv = require("initenv"),
-    logger_builder = require("log"),
+    log = require("log"),
     util = require("util"),
     ppm = require("ppm"),
 }
