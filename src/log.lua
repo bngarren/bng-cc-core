@@ -2,16 +2,28 @@ local Logger = {}
 Logger.__index = Logger
 
 local DEFAULT_CONFIG = {
-    source = nil, -- This will be populated dynamically
+    --- Name of the source file/program this log is logging
+    source = nil,
+    --- Log level: all log() calls at this level and above will be logged
     level = "info",
+    --- If true, will abbreviate the log level, e.g. [D] instead of [DEBUG]
     abbreviate_level = true,
+    --- If true, will use colorized output to terminal and monitors
     colors = true,
+    --- Date format string. See https://cplusplus.com/reference/ctime/strftime/
     timestamp = "%R:%S",
+    --- Options for file logging. Use nil or false or turn off file logging
     file = {
+        --- Base path for all log files. Typically the actual log path will be the programName/filename.log appended on to the base_path.
         base_path = "/bng/logs",
+        --- This points to the current log file path during runtime
         current_path = nil,
+        --- The max number of log files to keep within the program's log_dir (a subdirectory of base_path)
         max_logs = 3
     },
+    --- Determines which outputs should be attempted during logging. Defaults to true for 'term' (terminal output). 
+    -- <br> Example:
+    -- `outputs.monitors = {"top"}` -- will attempt to log to a monitor peripheral on the 'top' side
     outputs = { term = true }
 }
 
@@ -233,8 +245,10 @@ function Logger.new(config)
     end
 
     -- Ensure log directory exists
-
-    local log_dir = fs.combine(self.config.file.base_path, self.config.source)
+    local full_path = shell.getRunningProgram()
+    -- Extract the program folder name from path like "/bng/programs/myprogram/script.lua"
+    local program_name = full_path:match("bng/programs/([^/]+)/") or "unknown"
+    local log_dir = fs.combine(self.config.file.base_path, program_name)
     if not fs.exists(log_dir) then
         fs.makeDir(log_dir)
     end
@@ -406,7 +420,6 @@ function LoggerBuilder:build()
     return instance
 end
 
+
 return LoggerBuilder
 
-
--- return Logger
