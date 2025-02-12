@@ -5,7 +5,8 @@
 local ppm = {}
 
 local function init(deps)
-    local log = deps.log or error("Missing dep: log")
+    local _log = deps.log or error("Missing dep: log")
+    local log = _log.instance()
 
     local peripherals = {}
 
