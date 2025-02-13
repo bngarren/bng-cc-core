@@ -23,7 +23,7 @@ local DEFAULT_CONFIG = {
         --- The max number of log files to keep within the program's log_dir (a subdirectory of base_path)
         max_logs = 3
     },
-    --- Determines which outputs should be attempted during logging. Defaults to true for 'term' (terminal output). 
+    --- Determines which outputs should be attempted during logging. Defaults to true for 'term' (terminal output).
     -- <br> Example:
     -- `outputs.monitors = {"top"}` -- will attempt to log to a monitor peripheral on the 'top' side
     outputs = { term = true, file = true }
@@ -33,7 +33,7 @@ local DEFAULT_CONFIG = {
 local LEVELS = {
     trace = { level = 1, color = colors.lightGray },
     debug = { level = 2, color = colors.cyan },
-    info  = { level = 3, color = colors.lime },
+    info  = { level = 3, color = colors.white },
     warn  = { level = 4, color = colors.yellow },
     error = { level = 5, color = colors.red },
     fatal = { level = 6, color = colors.magenta }
@@ -210,7 +210,6 @@ end
 
 
 function Logger.new(config)
-
     if _instance then
         if config then
             -- Update existing instance's config
@@ -260,60 +259,41 @@ function Logger.new(config)
 
     -- [[[[[[ File logging init ]]]]]]
 
-    -- Set source if not explicitly provided
-    if not self.config.source then
-        self.config.source = get_caller_source()
+    -- Initialize file logging if enabled
+    if self.config.outputs.file then
+        local program_path = shell.getRunningProgram()
+        local program_name = program_path:match("bng/programs/([^/]+)/") or "unknown"
+
+        self.config.source = program_name
+        
+        -- Set up log directory
+        local log_dir = fs.combine(self.config.file.base_path, program_name)
+        if not fs.exists(log_dir) then
+            fs.makeDir(log_dir)
+        end
+
+        -- Clean old logs and set up new log file
+        clean_old_logs(log_dir, self.config.file.max_logs)
+        self.config.file.current_path = fs.combine(log_dir, 
+            get_new_log_filename(program_name))
+        
+        -- Write initial banner
+        write_log_banner(self)
     end
-
-    -- Ensure log directory exists
-    local full_path = shell.getRunningProgram()
-    -- Extract the program folder name from path like "/bng/programs/myprogram/script.lua"
-    local program_name = full_path:match("bng/programs/([^/]+)/") or "unknown"
-    local log_dir = fs.combine(self.config.file.base_path, program_name)
-    if not fs.exists(log_dir) then
-        fs.makeDir(log_dir)
-    end
-
-    clean_old_logs(log_dir, self.config.file.max_logs) -- Keep max # logs
-
-    -- Set up new log file
-    local new_log_filename = get_new_log_filename(self.config.source)
-    self.config.file.current_path = fs.combine(log_dir, new_log_filename)
 
     -- Initialize active monitors table
     self.active_monitors = {}
     self:sync_monitors()
-
-    -- Write log banner
-    write_log_banner(self)
 
     _instance = self
 
     return self
 end
 
--- Get the current logger instance or create with defaults
-function Logger.get_instance()
-    if not _instance then
-        -- Print warning since we're creating with defaults
-        print("Warning: Logger accessed before initialization. Using default configuration.")
-        return Logger.new({
-            outputs = {
-                file = false
-            }
-        })
-    end
-    return _instance
+function Logger:configure(config)
+    Logger.new(config)
 end
 
-function Logger:set_level(level)
-    if not LEVELS[level] then
-        error("Invalid logging level: " .. tostring(level))
-    end
-    self.config.level = level
-    self.current_level_index = LEVELS[level].level
-    return self
-end
 
 function Logger:sync_monitors()
     -- Clear current active monitors
@@ -390,75 +370,9 @@ for level, _ in pairs(LEVELS) do
     end
 end
 
--- ***** Logger Builder
-
-local LoggerBuilder = {}
-LoggerBuilder.__index = LoggerBuilder
-
-function LoggerBuilder.new()
-    local self = setmetatable({}, LoggerBuilder)
-    -- Initialize with empty config
-    self.config = deep_copy(DEFAULT_CONFIG)
-
-    return self
-end
-
-function LoggerBuilder:with_level(level)
-    self.config.level = level
-    return self
-end
-
-function LoggerBuilder:with_source(source)
-    self.config.source = source
-    return self
-end
-
-function LoggerBuilder:with_colors(enabled)
-    self.config.colors = enabled
-    return self
-end
-
-function LoggerBuilder:with_timestamp_format(format)
-    self.config.timestamp = format
-    return self
-end
-
-function LoggerBuilder:with_abbreviated_level(enabled)
-    self.config.abbreviate_level = enabled
-    return self
-end
-
-function LoggerBuilder:with_max_log_files(max)
-    self.config.file.max_logs = max
-    return self
-end
-
-function LoggerBuilder:with_terminal_output(enabled)
-    self.config.outputs.term = enabled
-    return self
-end
-
-function LoggerBuilder:with_monitor_output(monitor_names)
-    if type(monitor_names) == "string" then
-        monitor_names = { monitor_names }
-    end
-    self.config.outputs.monitors = monitor_names
-    return self
-end
-
-function LoggerBuilder:build()
-    -- If source wasn't explicitly set via with_source(), get it here
-    if not self.config.source then
-        self.config.source = get_caller_source()
-    end
-
-    local instance = Logger.new(self.config)
-    setmetatable(instance, Logger)
-    return instance
-end
-
 return {
-    Builder = LoggerBuilder,
-    instance = Logger.get_instance,
+    new = Logger.new,
+    get = function ()
+        return _instance or Logger.new()
+    end
 }
-

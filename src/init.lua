@@ -17,12 +17,12 @@ function DI.new()
 end
 
 function DI:with(deps)
-    if type(deps) ~= "table" then 
+    if type(deps) ~= "table" then
         error("deps must be a table")
     end
     for name, value in pairs(deps) do
         if type(name) ~= "string" then
-            error("dependency name must be a string") 
+            error("dependency name must be a string")
         end
         if value == nil then
             error(string.format("dependency '%s' cannot be nil", name))
@@ -71,15 +71,26 @@ local L = {
     _BUILD_DATE = version.BUILD_DATE,
 }
 
+-- Build logger singleton
+L.log = require("log")
+L.log.new({
+    level = "info",
+    outputs = {term = true, file = true}
+})
+
 -- Explicitly specify public modules and inject dependencies
 
 L.initenv = require("initenv")
-L.log = require("log")
+L.error = require("error")(DI.new()
+    :with({ log = L.log })
+    :for_dep("log")
+    :transform(function(m) return m.get() end)
+    :build())
 L.util = require("util")
 L.ppm = require("ppm")(DI.new()
     :with({ log = L.log })
     :for_dep("log")
-    :transform(function(m) return m.instance() end)
+    :transform(function(m) return m.get() end)
     :build())
 
 setmetatable(L, {
