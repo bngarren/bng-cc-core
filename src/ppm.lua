@@ -4,11 +4,13 @@
 
 local ppm = {}
 
+local peripherals = {}
+
 local function init(deps)
 
     local log = deps.log
 
-    local peripherals = {}
+    -- [[ Private methods ]]
 
     -- Wrap a peripheral safely
     local function safe_wrap(side)
@@ -18,6 +20,8 @@ local function init(deps)
             return nil
         end
     end
+
+    -- [[ Public API ]]
 
     -- Mount all peripherals
     function ppm.mount_all()

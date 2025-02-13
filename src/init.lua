@@ -17,8 +17,16 @@ function DI.new()
 end
 
 function DI:with(deps)
-    if type(deps) ~= "table" then error("deps must be a table") end
+    if type(deps) ~= "table" then 
+        error("deps must be a table")
+    end
     for name, value in pairs(deps) do
+        if type(name) ~= "string" then
+            error("dependency name must be a string") 
+        end
+        if value == nil then
+            error(string.format("dependency '%s' cannot be nil", name))
+        end
         self._deps[name] = { value = value }
     end
     return self
@@ -26,14 +34,9 @@ end
 
 function DI:transform(fn)
     if not self._current_dep then
-        -- Apply transform to last added dep if no current one
-        local last_dep_name = next(self._deps, nil)
-        if last_dep_name then
-            self._deps[last_dep_name].transform = fn
-        end
-    else
-        self._deps[self._current_dep].transform = fn
+        error("No dependency selected. Use for_dep() first")
     end
+    self._deps[self._current_dep].transform = fn
     return self
 end
 
@@ -68,11 +71,14 @@ local L = {
     _BUILD_DATE = version.BUILD_DATE,
 }
 
+-- Explicitly specify public modules and inject dependencies
+
 L.initenv = require("initenv")
 L.log = require("log")
 L.util = require("util")
 L.ppm = require("ppm")(DI.new()
     :with({ log = L.log })
+    :for_dep("log")
     :transform(function(m) return m.instance() end)
     :build())
 
