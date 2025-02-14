@@ -302,42 +302,6 @@ local function init_file_logging(self)
     end
 end
 
--- Create a child logger class
---- @class ChildLogger
-local ChildLogger = {}
-ChildLogger.__index = ChildLogger
-
-function ChildLogger.new(parent, context)
-    ---@class ChildLogger
-    local self = setmetatable({}, ChildLogger)
-    self.parent = parent
-    self.context = context
-    return self
-end
-
--- Forward all log methods to parent with merged context
-for level, _ in pairs(LEVELS) do
-    ChildLogger[level] = function(self, ...)
-        local first, _ = ...
-        local new_context = type(first) == "table" and first or nil
-        local merged_context = merge_context(self.context, new_context)
-        
-        if new_context then
-            self.parent:log(level, merged_context, select(2, ...))
-        else
-            self.parent:log(level, merged_context, ...)
-        end
-    end
-end
-
--- Allow child loggers to create their own children
-function ChildLogger:child(context)
-    if type(context) ~= "table" then
-        error("Context must be a table")
-    end
-    local merged_context = merge_context(self.context, context)
-    return ChildLogger.new(self.parent, merged_context)
-end
 
 
 function Logger.new(config)
@@ -449,7 +413,7 @@ function Logger:log(level, context, ...)
             write_to_monitor(
                 mon, -- Pass the actual monitor peripheral
                 output,
-                self.config.colors and LEVELS[level].color
+                self.config.colors and level_info.color or nil
             )
         end
     end
@@ -459,7 +423,7 @@ function Logger:log(level, context, ...)
         term.redirect(prev_term) -- Ensure we're on main terminal
         write_to_term(
             output,
-            self.config.colors and LEVELS[level].color
+            self.config.colors and level_info.color or nil
         )
     end
 
@@ -469,12 +433,34 @@ function Logger:log(level, context, ...)
     end
 end
 
--- Create child logger (similar to pino.child())
+--- Returns a logger instance with added context
+---@param context table|nil If nil, will attempt to set context as `{module = filename}`. Otherwise, will merge the context with any parent context
+---@return Logger
 function Logger:child(context)
-    if type(context) ~= "table" then
+    if context == nil then
+        -- Get the script name of the caller
+        local info = debug.getinfo(2, "S")
+        local source = info and info.source
+
+        -- Extract filename from `@filename` format
+        if source and source:sub(1, 1) == "@" then
+            source = source:sub(2) -- Remove the "@" prefix
+        else
+            source = "unknown"
+        end
+
+        context = { module = fs.getName(source) }
+    elseif type(context) ~= "table" then
         error("Context must be a table")
     end
-    return ChildLogger.new(self, context)
+
+    -- Merge the existing context with the new child context
+    local merged_context = merge_context(self.context, context)
+
+    -- Create a new lightweight child logger that inherits from the parent
+    local child = setmetatable({ context = merged_context, parent = self }, { __index = self })
+
+    return child
 end
 
 function Logger:close()
