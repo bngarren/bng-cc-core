@@ -5,15 +5,13 @@ local M = {}
 
 local crash = {}
 crash.app = "unknown"
-crash.version = "v0.0.0"
 crash.error = ""
 
 local function init(deps)
     local log = deps.log
 
-    function M.crash_set_env(application, version)
+    function M.crash_set_env(application)
         crash.app = application
-        crash.version = version
     end
 
     function M.crash_handler(error)
@@ -23,6 +21,8 @@ local function init(deps)
             return
         end
         log:fatal(error)
+        log:info("---------------------------")
+        log:info("App: %s", crash.app)
         log:info(debug.traceback("----- begin debug trace -----", 2))
         log:info("----- end debug trace -----")
     end
@@ -32,6 +32,7 @@ local function init(deps)
             print("fatal error occured in main application:")
             error(crash.error, 0)
         end
+        log:close()
     end
 
     return M

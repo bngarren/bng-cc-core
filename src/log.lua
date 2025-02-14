@@ -1,3 +1,4 @@
+--- @class Logger
 local Logger = {}
 Logger.__index = Logger
 
@@ -5,31 +6,46 @@ local _instance = nil
 
 local DEFAULT_CONFIG = {
     --- Name of the source file/program this log is logging
+    --- @type string?
     source = nil,
     --- Log level: all log() calls at this level and above will be logged
+    --- @type LogLevel
     level = "info",
     --- If true, will abbreviate the log level, e.g. [D] instead of [DEBUG]
+    --- @type boolean
     abbreviate_level = true,
     --- If true, will use colorized output to terminal and monitors
+    --- @type boolean
     colors = true,
     --- Date format string. See https://cplusplus.com/reference/ctime/strftime/
+    --- @type string
     timestamp = "%R:%S",
     --- Options for file logging.
     file = {
         --- Base path for all log files. Typically the actual log path will be the programName/filename.log appended on to the base_path.
+        --- @type string
         base_path = "/bng/logs",
         --- This points to the current log file path during runtime
+        --- @type string?
         current_path = nil,
+        --- The open file handle
+        --- The ReadWriteHandle or nil
+        handle = nil,
         --- The max number of log files to keep within the program's log_dir (a subdirectory of base_path)
-        max_logs = 3
+        --- @type integer
+        max_logs = 3,
+        --- If true, will append the banner info to the log file
+        write_banner = false,
     },
-    --- Determines which outputs should be attempted during logging. Defaults to true for 'term' (terminal output).
-    -- <br> Example:
+    --- Determines which outputs should be attempted during logging. Defaults to true for 'term' (terminal output).<br>
+    -- Example:
     -- `outputs.monitors = {"top"}` -- will attempt to log to a monitor peripheral on the 'top' side
-    outputs = { term = true, file = true }
+    --- @type table
+    outputs = { term = true, file = true },
 }
 
 -- Define log levels with colors
+--- @enum (key) LogLevel
 local LEVELS = {
     trace = { level = 1, color = colors.lightGray },
     debug = { level = 2, color = colors.cyan },
@@ -39,7 +55,9 @@ local LEVELS = {
     fatal = { level = 6, color = colors.magenta }
 }
 
-
+---Returns the formatted message string
+---@param ... unknown
+---@return string
 local function format_log(...)
     local args = { ... }
     if #args == 0 then return "" end
@@ -49,7 +67,9 @@ local function format_log(...)
 
     -- Check if first argument is a format string
     if type(firstArg) == "string" and firstArg:find("%%") then
-        -- Function to count format specifiers correctly
+        --- @cast firstArg string
+        --- Function to count format specifiers correctly
+        --- @return integer
         local function count_format_specifiers(fmt)
             local count = 0
             for _ in fmt:gmatch("%%[cdieEfgGosuxXpq]") do
@@ -91,6 +111,7 @@ end
 local function deep_copy(original)
     local copy
     if type(original) == 'table' then
+        ---@cast original table
         copy = {}
         for key, value in pairs(original) do
             copy[key] = deep_copy(value)
@@ -101,30 +122,28 @@ local function deep_copy(original)
     return copy
 end
 
+local function deep_merge(target, source)
+    for k, v in pairs(source) do
+        if type(v) == "table" and type(target[k]) == "table" then
+            -- Recursively merge nested tables
+            deep_merge(target[k], v)
+        else
+            -- Direct assignment for non-table values
+            target[k] = v
+        end
+    end
+    return target
+end
+
 local function get_new_log_filename(source)
     -- Use epoch time as prefix - guaranteed to be sortable and unique
     local timestamp = os.epoch("utc")
     return string.format("%d_%s.log", timestamp, source or "unknown")
 end
 
--- Helper function to get the caller's source file
-local function get_caller_source()
-    -- Walk up the stack to find the first non-Logger caller
-    local level = 3 -- Start at 3 to skip immediate caller and logger methods
-    local info = debug.getinfo(level, "S")
-
-    if info and info.source then
-        -- Clean up the source path - remove @ prefix if present
-        local source = info.source:match("^@?(.+)$")
-        if source then
-            -- Get the full filename including dots but excluding .lua extension
-            local filename = source:match("[^/\\]+$"):gsub("%.lua$", "")
-            return filename
-        end
-    end
-    return "unknown"
-end
-
+---Removes log files that exceed max_logs (keep newest)
+---@param log_dir string
+---@param max_logs integer
 local function clean_old_logs(log_dir, max_logs)
     local files = {}
     for _, file in ipairs(fs.list(log_dir)) do
@@ -142,9 +161,11 @@ local function clean_old_logs(log_dir, max_logs)
     end
 end
 
+--- Writes the banner info to the log file
+---@param logger Logger
 local function write_log_banner(logger)
-    local file = fs.open(logger.config.file.current_path, "w")
-    if not file then return end
+    local handle = logger.config.file.handle
+    if not handle then return end
 
     local banner = {
         "==================== Logger Initialized ====================",
@@ -157,22 +178,26 @@ local function write_log_banner(logger)
         "==========================================================="
     }
 
-    file.write(table.concat(banner, "\n") .. "\n\n")
-    file.close()
+    handle.writeLine(table.concat(banner, "\n") .. "\n")
+    handle.flush()
 end
 
-local function validate_monitor(monitor_name)
-    if not peripheral.isPresent(monitor_name) then
-        return false, "Monitor not present"
+---@param side string
+---@return boolean
+---@return any
+local function validate_monitor(side)
+    if not peripheral.isPresent(side) then
+        return false, "peripheral not present on " .. side
     end
 
-    if peripheral.getType(monitor_name) ~= "monitor" then
-        return false, "Not a monitor"
+    local peripheral_type = peripheral.getType(side)
+    if peripheral_type ~= "monitor" then
+        return false, "not a monitor, found: " .. peripheral_type
     end
 
-    local mon = peripheral.wrap(monitor_name)
-    if not mon or type(mon.setTextColor) ~= "function" then
-        return false, "Invalid monitor instance"
+    local mon = peripheral.wrap(side)
+    if not mon or type(mon.setTextScale) ~= "function" then
+        return false, "failed function check"
     end
 
     return true, mon
@@ -197,69 +222,21 @@ local function write_to_term(output, color)
 end
 
 local function write_to_file(logger, output)
-    local filepath = logger.config.file.current_path
-    local success, file = pcall(fs.open, filepath, "a")
-
-    if not success or not file then
-        return logger:error("Could not open log file: %s", filepath)
+    local handle = logger.config.file.handle
+    if not logger.config.file.handle then
+        return logger:error("attempt to write to file but no open handle")
     end
-
-    file.write(output .. "\n")
-    file.close()
+    handle.writeLine(output)
+    handle.flush()
 end
 
-
-function Logger.new(config)
-    if _instance then
-        if config then
-            -- Update existing instance's config
-            for k, v in pairs(config) do
-                if type(v) == "table" and type(_instance.config[k]) == "table" then
-                    for subk, subv in pairs(v) do
-                        _instance.config[k][subk] = subv
-                    end
-                else
-                    _instance.config[k] = v
-                end
-            end
-            -- Reinitialize necessary components with new config
-            _instance:sync_monitors()
-        end
-        return _instance
+-- Extract file initialization into a separate function
+local function init_file_logging(self)
+    -- close any previous handle
+    if self.config.file.handle then
+        self.config.file.handle.close()
     end
 
-
-    local self = setmetatable({}, Logger)
-    -- Start with a deep copy of defaults
-    self.config = deep_copy(DEFAULT_CONFIG)
-
-    -- If config is provided, merge it with defaults
-    if config and type(config) == "table" then
-        for k, v in pairs(config) do
-            if type(v) == "table" and type(self.config[k]) == "table" then
-                -- For nested tables, merge recursively
-                for subk, subv in pairs(v) do
-                    self.config[k][subk] = subv
-                end
-            else
-                -- For non-table values, simply overwrite
-                self.config[k] = v
-            end
-        end
-    end
-
-    -- print(textutils.serialize(self.config, {compact = true}))
-
-    if not LEVELS[self.config.level] then
-        error("Invalid logging level: " .. tostring(self.config.level))
-    end
-
-    -- Use a precomputed level index for fast lookup
-    self.current_level_index = LEVELS[self.config.level].level
-
-    -- [[[[[[ File logging init ]]]]]]
-
-    -- Initialize file logging if enabled
     if self.config.outputs.file then
         local program_path = shell.getRunningProgram()
         local program_name = program_path:match("bng/programs/([^/]+)/") or "unknown"
@@ -276,10 +253,54 @@ function Logger.new(config)
         clean_old_logs(log_dir, self.config.file.max_logs)
         self.config.file.current_path = fs.combine(log_dir, 
             get_new_log_filename(program_name))
-        
-        -- Write initial banner
-        write_log_banner(self)
+
+        -- open new file handle
+        local success, handle = pcall(fs.open, self.config.file.current_path, "a")
+        if not success or not handle then
+            self:error("could not open log file: %s", self.config.file.current_path)
+        else
+            self.config.file.handle = handle
+            -- Write initial banner - only for new files AND when write_banner is true
+            if fs.getSize(self.config.file.current_path) == 0 and self.config.file.write_banner then
+                write_log_banner(self)
+            end
+        end
     end
+end
+
+
+function Logger.new(config)
+    if _instance then
+        if config then
+            -- Use deep merge for config update
+            deep_merge(_instance.config, config)
+            -- Reinitialize necessary components with new config
+            init_file_logging(_instance)
+            _instance:sync_monitors()
+        end
+        return _instance
+    end
+
+    ---@class Logger
+    local self = setmetatable({}, Logger)
+    -- Start with a deep copy of defaults
+    self.config = deep_copy(DEFAULT_CONFIG)
+
+    -- If config is provided, merge it with defaults
+    if config and type(config) == "table" then
+        deep_merge(self.config, config)
+    end
+
+    -- print(textutils.serialize(self.config, {compact = true}))
+
+    if not LEVELS[self.config.level] then
+        error("Invalid logging level: " .. tostring(self.config.level))
+    end
+
+    -- Use a precomputed level index for fast lookup
+    self.current_level_index = LEVELS[self.config.level].level
+
+    init_file_logging(self)
 
     -- Initialize active monitors table
     self.active_monitors = {}
@@ -360,6 +381,14 @@ function Logger:log(level, ...)
     -- Handle file output
     if self.config.outputs.file then
         write_to_file(self, output)
+    end
+end
+
+function Logger:close()
+    if self.config.file.handle then
+        self.config.file.handle.flush()
+        self.config.file.handle.close()
+        self.config.file.handle = nil
     end
 end
 

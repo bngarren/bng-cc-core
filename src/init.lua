@@ -75,7 +75,10 @@ local L = {
 L.log = require("log")
 L.log.new({
     level = "info",
-    outputs = {term = true, file = true}
+    outputs = {term = true, file = true},
+    file = {
+        write_banner = false
+    }
 })
 
 -- Explicitly specify public modules and inject dependencies
