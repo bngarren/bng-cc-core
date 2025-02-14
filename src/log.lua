@@ -19,7 +19,7 @@ local DEFAULT_CONFIG = {
     colors = true,
     --- Date format string. See https://cplusplus.com/reference/ctime/strftime/
     --- @type string
-    timestamp = "%R:%S",
+    timestamp = "%Y-%m-%dT%H:%M:%S", --ISO 8601 format
     --- Options for file logging.
     file = {
         --- Base path for all log files. Typically the actual log path will be the programName/filename.log appended on to the base_path.
@@ -55,15 +55,28 @@ local LEVELS = {
     fatal = { level = 6, color = colors.magenta }
 }
 
+
 ---Returns the formatted message string
 ---@param ... unknown
 ---@return string
-local function format_log(...)
+local function format_log(context,...)
     local args = { ... }
     if #args == 0 then return "" end
 
-    local firstArg = args[1]
     local parts = {}
+
+    -- Add context prefix if present
+    if context and next(context) then
+        local ctx_parts = {}
+        for k, v in pairs(context) do
+            table.insert(ctx_parts, string.format("%s=%s", k, tostring(v)))
+        end
+        if #ctx_parts > 0 then
+            table.insert(parts, string.format("[%s]", table.concat(ctx_parts, ",")))
+        end
+    end
+
+    local firstArg = args[1]
 
     -- Check if first argument is a format string
     if type(firstArg) == "string" and firstArg:find("%%") then
@@ -133,6 +146,17 @@ local function deep_merge(target, source)
         end
     end
     return target
+end
+
+local function merge_context(base_context, new_context)
+    if not base_context and not new_context then return nil end
+    local merged = deep_copy(base_context or {})
+    if new_context then
+        for k, v in pairs(new_context) do
+            merged[k] = v
+        end
+    end
+    return merged
 end
 
 local function get_new_log_filename(source)
@@ -210,7 +234,7 @@ local function write_to_monitor(mon, output, color)
     term.redirect(mon)
     if color then mon.setTextColor(color) end
     print(output)
-    if color then mon.setTextColor(orig_color) end
+    mon.setTextColor(orig_color)
     term.redirect(prev_term)
 end
 
@@ -218,16 +242,26 @@ local function write_to_term(output, color)
     local orig_color = term.getTextColor()
     if color then term.setTextColor(color) end
     print(output)
-    if color then term.setTextColor(orig_color) end
+    term.setTextColor(orig_color)
 end
 
 local function write_to_file(logger, output)
     local handle = logger.config.file.handle
     if not logger.config.file.handle then
-        return logger:error("attempt to write to file but no open handle")
+        -- avoid a loop
+        logger.config.outputs.file = false
+        logger:error("attempt to write to file but no open handle")
+        logger.config.outputs.file = true
+        return
     end
-    handle.writeLine(output)
-    handle.flush()
+    local success, err = pcall(handle.writeLine, output)
+    if not success then
+        logger.config.outputs.file = false
+        logger:warn("Log file write failed: %s", err)
+        logger.config.outputs.file = true
+    else
+        handle.flush()
+    end
 end
 
 -- Extract file initialization into a separate function
@@ -266,6 +300,43 @@ local function init_file_logging(self)
             end
         end
     end
+end
+
+-- Create a child logger class
+--- @class ChildLogger
+local ChildLogger = {}
+ChildLogger.__index = ChildLogger
+
+function ChildLogger.new(parent, context)
+    ---@class ChildLogger
+    local self = setmetatable({}, ChildLogger)
+    self.parent = parent
+    self.context = context
+    return self
+end
+
+-- Forward all log methods to parent with merged context
+for level, _ in pairs(LEVELS) do
+    ChildLogger[level] = function(self, ...)
+        local first, _ = ...
+        local new_context = type(first) == "table" and first or nil
+        local merged_context = merge_context(self.context, new_context)
+        
+        if new_context then
+            self.parent:log(level, merged_context, select(2, ...))
+        else
+            self.parent:log(level, merged_context, ...)
+        end
+    end
+end
+
+-- Allow child loggers to create their own children
+function ChildLogger:child(context)
+    if type(context) ~= "table" then
+        error("Context must be a table")
+    end
+    local merged_context = merge_context(self.context, context)
+    return ChildLogger.new(self.parent, merged_context)
 end
 
 
@@ -340,7 +411,7 @@ function Logger:sync_monitors()
     self.initialized = true
 end
 
-function Logger:log(level, ...)
+function Logger:log(level, context, ...)
     local level_info = LEVELS[level]
     if not level_info then
         error("Invalid log level function: " .. tostring(level))
@@ -350,7 +421,21 @@ function Logger:log(level, ...)
         return
     end
 
-    local msg = format_log(...)
+    -- Parameter shifting based on context being a table
+    -- If context is not a table, we pass it as a regular arg
+    local args
+    if type(context) ~= "table" then
+        args = {context, ...}
+        context = {}
+    else
+        args = {...}
+    end
+
+    -- Merge inherited context from child loggers
+    local merged_context = merge_context(self.context, context)
+
+    -- Format the log message
+    local msg = format_log(merged_context, table.unpack(args))
     local timestamp = os.date(self.config.timestamp)
     local levelText = self.config.abbreviate_level and string.sub(level:upper(), 1, 1) or level:upper()
     local output = string.format("[%s] [%s] %s", levelText, timestamp, msg)
@@ -384,6 +469,14 @@ function Logger:log(level, ...)
     end
 end
 
+-- Create child logger (similar to pino.child())
+function Logger:child(context)
+    if type(context) ~= "table" then
+        error("Context must be a table")
+    end
+    return ChildLogger.new(self, context)
+end
+
 function Logger:close()
     if self.config.file.handle then
         self.config.file.handle.flush()
@@ -398,6 +491,8 @@ for level, _ in pairs(LEVELS) do
         self:log(level, ...)
     end
 end
+
+
 
 return {
     new = Logger.new,
