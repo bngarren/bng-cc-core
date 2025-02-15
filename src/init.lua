@@ -71,17 +71,22 @@ local L = {
     _BUILD_DATE = version.BUILD_DATE,
 }
 
+-- Explicitly specify public modules and inject dependencies
+
+L.util = require("util")()
+
 -- Build logger singleton
-L.log = require("log")
+L.log = require("log")(DI.new()
+    :with({ util = L.util })
+    :build())
 L.log.new({
     level = "info",
-    outputs = {term = true, file = true},
+    outputs = { term = true, file = true },
     file = {
         write_banner = false
     }
 })
 
--- Explicitly specify public modules and inject dependencies
 
 L.initenv = require("initenv")
 L.error = require("error")(DI.new()
@@ -89,7 +94,6 @@ L.error = require("error")(DI.new()
     :for_dep("log")
     :transform(function(m) return m.get() end)
     :build())
-L.util = require("util")
 L.ppm = require("ppm")(DI.new()
     :with({ log = L.log })
     :for_dep("log")

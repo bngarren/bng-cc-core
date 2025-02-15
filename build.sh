@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# Ensure the latest tags are fetched
-git fetch --tags --force
-
 # Check if running in GitHub Actions release workflow
 GITHUB_RELEASE=false
 if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then

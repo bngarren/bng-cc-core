@@ -9,7 +9,7 @@ local peripherals = {}
 
 local function init(deps)
 
-    local log = deps.log
+    local log = deps.log:child()
 
     -- [[ Private methods ]]
 
@@ -31,8 +31,7 @@ local function init(deps)
         peripherals = {} -- Clear existing mounts
         for _, side in ipairs(peripheral.getNames()) do
             peripherals[side] = safe_wrap(side)
-            -- print("PPM: Mounted " ..peripheral.getType(side).." on " .. side)
-            log:info("PPM: Mounted %s on %s", peripheral.getType(side), side)
+            log:success("PPM: Mounted %s on %s", peripheral.getType(side), side)
         end
     end
 
