@@ -52,6 +52,8 @@ jobs:
         path: |
           dist/bng-cc-core.lua
           dist/release/bng-cc-core.min.lua
+          dist/vendor.lua
+          dist/release/vendor.min.lua
         if-no-files-found: error
 
     - name: Upload Release Assets
@@ -61,4 +63,6 @@ jobs:
       run: |
         gh release upload ${{ github.event.release.tag_name }} \
           dist/bng-cc-core.lua \
-          dist/release/bng-cc-core.min.lua
+          dist/release/bng-cc-core.min.lua \
+          dist/vendor.lua \
+          dist/release/vendor.min.lua
