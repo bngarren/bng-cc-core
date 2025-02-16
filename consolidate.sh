@@ -1,16 +1,16 @@
 #!/bin/bash
 
 # Set the starting directory to the current directory
-start_dir="./src"
+start_dir="./bng-cc-core"
 
 # Set the output file name
-output_file="consolidated.md"
+output_file="bng-cc-core.md"
 
 # Default directories to exclude (space-separated)
-exclude_dirs="node_modules dist build"
+exclude_dirs="vendor"
 
 # Files to exclude (space-separated, can use wildcards)
-exclude_files="version.lua"
+exclude_files=""
 
 # Parse command line arguments
 while getopts "d:" opt; do

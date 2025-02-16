@@ -1,6 +1,5 @@
-local ecnet2 = require 'ecnet2'
+local ecnet2 = require 'ecnet2.init'
 local random = require 'ccryptolib.random'
-
 
 return {
     ccryptolib = {

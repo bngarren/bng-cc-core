@@ -87,6 +87,8 @@ L.log.new({
     }
 })
 
+L.log.get():debug("package path: %s", package.path)
+
 
 L.initenv = require("initenv")
 L.error = require("error")(DI.new()

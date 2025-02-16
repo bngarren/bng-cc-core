@@ -23,7 +23,9 @@ COPY build.sh /app/
 RUN chmod +x /app/build.sh
 
 # add github to known hosts
-RUN ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+#RUN ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+
+RUN git fetch --unshallow || true
 
 # Command to run when container starts
 CMD ["./build.sh"]
