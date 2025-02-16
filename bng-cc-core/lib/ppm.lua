@@ -9,7 +9,7 @@ local peripherals = {}
 
 local function init(deps)
 
-    local log = deps.log:child()
+    local log = deps.log:child({module="ppm"})
 
     -- [[ Private methods ]]
 
